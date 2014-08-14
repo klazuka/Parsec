@@ -49,6 +49,25 @@ func <|><A>(lhs: String -> (A?, String), rhs: String -> (A?, String)) -> String 
     }
 }
 
+func many1<A>(parser: String -> (A?, String)) -> String -> ([A]?, String) {
+    return { s in
+        var (a:A?, s2) = (nil, s)
+        var list = [A]()
+        do {
+            (a, s2) = parser(s2)
+            if a != nil {
+                list.append(a!)
+            }
+        } while a != nil && !s.isEmpty
+        
+        if list.count == 0 {
+            return (nil, s)
+        } else {
+            return (list, s2)
+        }
+    }
+}
+
 
 func run<T>(parser: String -> (T, String), input: String) -> (T, String) {
     return parser(input)
@@ -104,6 +123,9 @@ test(parser, "kungfoo!")
 let parser2 = matchChar(".") <|> matchChar("?") <|> matchChar("!")
 test(parser2, "!")
 
-let parser3 = matchChar("z") >>> (matchChar(".") <|> matchChar("?") <|> matchChar("!"))
-test(parser3, "zd")
+let parser3 = matchChar("o") >>> (matchChar(".") <|> matchChar("?") <|> matchChar("!"))
+test(parser3, "o.")
+
+let parser4 = many1(matchChar("z")) >>> matchChar(".")
+test(parser4, "zzz.")
 
