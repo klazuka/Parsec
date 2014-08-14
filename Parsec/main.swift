@@ -15,7 +15,7 @@ extension String {
 
 //MARK:- combinators
 
-// sequence operator over Parser actions
+// sequence operator where the former result is discarded, and the latter is kept
 // it's a shame that I can't define a generic typealias to simplify the type signature
 // TODO: represent each Parser action as a callable struct?
 infix operator >>> { associativity left }
@@ -30,6 +30,22 @@ func >>><A,B>(lhs: String -> (A?, String), rhs: String -> (B?, String)) -> Strin
             return (nil, s)
         }
         return (b, s3)
+    }
+}
+
+// sequence operator where the former result is kept, and the latter is discarded
+infix operator >>>- { associativity left }
+func >>>-<A,B>(lhs: String -> (A?, String), rhs: String -> (B?, String)) -> String -> (A?, String) {
+    return { s in
+        let (a, s2) = lhs(s)
+        if a == nil {
+            return (nil, s)
+        }
+        let (b, s3) = rhs(s2)
+        if b == nil {
+            return (nil, s)
+        }
+        return (a, s3)
     }
 }
 
@@ -65,6 +81,21 @@ func many1<A>(parser: String -> (A?, String)) -> String -> ([A]?, String) {
         } else {
             return (list, s2)
         }
+    }
+}
+
+// matches zero or more occurrences of `parser` up until `tillParser` matches once
+func manyTill<A,B>(parser: String -> (A?, String), tillParser: String -> (B?, String)) -> String -> ([A]?, String) {
+    return { s in
+        let (ok, s2) = tillParser(s)
+        if ok != nil {
+            return ([A](), s2)
+        }
+        let (ok2, s3) = run(many1(parser) >>>- tillParser, s)
+        if ok2 != nil {
+            return (ok2, s3)
+        }
+        return (nil, s)
     }
 }
 
@@ -126,6 +157,17 @@ test(parser2, "!")
 let parser3 = matchChar("o") >>> (matchChar(".") <|> matchChar("?") <|> matchChar("!"))
 test(parser3, "o.")
 
+// there must be at least one z followed by a period
 let parser4 = many1(matchChar("z")) >>> matchChar(".")
 test(parser4, "zzz.")
+
+// match any number of z's (including zero) followed by a period
+let parser5 = manyTill(matchChar("z"), matchChar("."))
+test(parser5, "zzz.")
+
+// match any number of z's (including zero) followed by a period
+let parser6 = manyTill(matchChar("z"), matchChar("."))
+test(parser6, ".")
+
+
 
