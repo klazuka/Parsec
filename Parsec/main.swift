@@ -9,23 +9,28 @@ extension String {
     }
 }
 
-
+//MARK:- the parser type
+//
+// typealias Parser<R> = String -> (R, String)
 // doesn't compile in Xcode6-beta5
-//typealias Parser<T> = String -> (T, String)
+// so instead, declare a generic struct that's initialized with a closure
+
+struct Parser<R> {
+    let p: String -> (R, String)
+}
+
 
 //MARK:- combinators
 
 // sequence operator where the former result is discarded, and the latter is kept
-// it's a shame that I can't define a generic typealias to simplify the type signature
-// TODO: represent each Parser action as a callable struct?
 infix operator >>> { associativity left }
-func >>><A,B>(lhs: String -> (A?, String), rhs: String -> (B?, String)) -> String -> (B?, String) {
-    return { s in
-        let (a, s2) = lhs(s)
+func >>><A,B>(lhs: Parser<A?>, rhs: Parser<B?>) -> Parser<B?> {
+    return Parser { s in
+        let (a, s2) = lhs.p(s)
         if a == nil {
             return (nil, s)
         }
-        let (b, s3) = rhs(s2)
+        let (b, s3) = rhs.p(s2)
         if b == nil {
             return (nil, s)
         }
@@ -35,13 +40,13 @@ func >>><A,B>(lhs: String -> (A?, String), rhs: String -> (B?, String)) -> Strin
 
 // sequence operator where the former result is kept, and the latter is discarded
 infix operator >>>- { associativity left }
-func >>>-<A,B>(lhs: String -> (A?, String), rhs: String -> (B?, String)) -> String -> (A?, String) {
-    return { s in
-        let (a, s2) = lhs(s)
+func >>>-<A,B>(lhs: Parser<A?>, rhs: Parser<B?>) -> Parser<A?> {
+    return Parser { s in
+        let (a, s2) = lhs.p(s)
         if a == nil {
             return (nil, s)
         }
-        let (b, s3) = rhs(s2)
+        let (b, s3) = rhs.p(s2)
         if b == nil {
             return (nil, s)
         }
@@ -51,13 +56,13 @@ func >>>-<A,B>(lhs: String -> (A?, String), rhs: String -> (B?, String)) -> Stri
 
 
 infix operator <|> { associativity left }
-func <|><A>(lhs: String -> (A?, String), rhs: String -> (A?, String)) -> String -> (A?, String) {
-    return { s in
-        let (a, s2) = lhs(s)
+func <|><A>(lhs: Parser<A?>, rhs: Parser<A?>) -> Parser<A?> {
+    return Parser { s in
+        let (a, s2) = lhs.p(s)
         if a != nil {
             return (a, s2) // lhs-success
         }
-        let (b, s3) = rhs(s)
+        let (b, s3) = rhs.p(s)
         if b != nil {
             return (b, s3) // rhs-success
         }
@@ -65,12 +70,12 @@ func <|><A>(lhs: String -> (A?, String), rhs: String -> (A?, String)) -> String 
     }
 }
 
-func many1<A>(parser: String -> (A?, String)) -> String -> ([A]?, String) {
-    return { s in
+func many1<A>(parser: Parser<A?>) -> Parser<[A]?> {
+    return Parser { s in
         var (a:A?, s2) = (nil, s)
         var list = [A]()
         do {
-            (a, s2) = parser(s2)
+            (a, s2) = parser.p(s2)
             if a != nil {
                 list.append(a!)
             }
@@ -85,9 +90,9 @@ func many1<A>(parser: String -> (A?, String)) -> String -> ([A]?, String) {
 }
 
 // matches zero or more occurrences of `parser` up until `tillParser` matches once
-func manyTill<A,B>(parser: String -> (A?, String), tillParser: String -> (B?, String)) -> String -> ([A]?, String) {
-    return { s in
-        let (ok, s2) = tillParser(s)
+func manyTill<A,B>(parser: Parser<A?>, tillParser: Parser<B?>) -> Parser<[A]?> {
+    return Parser { s in
+        let (ok, s2) = tillParser.p(s)
         if ok != nil {
             return ([A](), s2)
         }
@@ -100,13 +105,13 @@ func manyTill<A,B>(parser: String -> (A?, String), tillParser: String -> (B?, St
 }
 
 
-func run<T>(parser: String -> (T, String), input: String) -> (T, String) {
-    return parser(input)
+func run<T>(parser: Parser<T>, input: String) -> (T, String) {
+    return parser.p(input)
 }
 
 //MARK:- core parsers
-func matchChar(c: Character) -> String -> (Bool?, String) {
-    return { s in
+func matchChar(c: Character) -> Parser<Bool?> {
+    return Parser { s in
         if !s.isEmpty && s[s.startIndex] == c {
             return (true, s.tail)
         } else {
@@ -115,14 +120,14 @@ func matchChar(c: Character) -> String -> (Bool?, String) {
     }
 }
 
-func matchString(m: String) -> String -> (Bool?, String) {
-    return { s in
+func matchString(m: String) -> Parser<Bool?> {
+    return Parser { s in
         if m.isEmpty {
             return (true, s)
         } else if s.isEmpty {
             return (nil, s)
         } else if m[m.startIndex] == s[s.startIndex] {
-            return matchString(m.tail)(s.tail)
+            return run(matchString(m.tail), (s.tail))
         } else {
             return (nil, s)
         }
@@ -130,14 +135,14 @@ func matchString(m: String) -> String -> (Bool?, String) {
 }
 
 //MARK:- example of an "application" layer parser
-func matchFoo() -> String -> (Bool?, String) {
+func matchFoo() -> Parser<Bool?> {
     return matchChar("f") >>> matchChar("o") >>> matchChar("o")
 }
 
 //MARK:- demo code
 var s = "kungfoo!"
 
-func test<T>(parser: String -> (T?, String), input: String) -> (Bool, String) {
+func test<T>(parser: Parser<T?>, input: String) -> (Bool, String) {
     var (match, output) = run(parser, input)
     if match != nil {
         println("parse success: remaining='\(output)'")
